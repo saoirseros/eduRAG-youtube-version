@@ -2,5 +2,6 @@
 __pycache__/
 *.pyc
 .env
+cookies*.txt
 data/
 qdrant_storage/

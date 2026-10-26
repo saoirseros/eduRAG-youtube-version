@@ -1,0 +1,10 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: edurag-qdrant
+    ports:
+      - "6333:6333"   # REST API + web dashboard
+      - "6334:6334"   # gRPC (faster, optional)
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
