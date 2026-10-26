@@ -21,6 +21,16 @@ PLAYLIST_REGISTRY = DATA_DIR / "playlists.json"
 DEFAULT_MAX_VIDEOS = 2          # videos processed per playlist unless the user asks for more
 MAX_VIDEO_SECONDS = 3 * 3600    # skip videos longer than this when Whisper would be needed
 
+
+def cookie_opts_from_env() -> dict:
+    """yt-dlp cookie options, only needed if YouTube shows 'Sign in to confirm you're not a bot'."""
+    opts = {}
+    if os.getenv("EDURAG_COOKIES_FROM_BROWSER"):
+        opts["cookiesfrombrowser"] = (os.environ["EDURAG_COOKIES_FROM_BROWSER"],)
+    if os.getenv("EDURAG_COOKIES_FILE"):
+        opts["cookiefile"] = os.environ["EDURAG_COOKIES_FILE"]
+    return opts
+
 # Whisper (runs locally on CPU)
 WHISPER_MODEL = "small"
 WHISPER_COMPUTE_TYPE = "int8"

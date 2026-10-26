@@ -88,7 +88,7 @@ def register_playlist(playlist: dict, max_videos: int) -> dict:
             "id": playlist["id"],
             "title": playlist["title"],
             "collection": collection_name(playlist["id"]),
-            "state": "new",
+            "state": "ready" if videos and all(v["status"] == "done" for v in videos) else "new",
             "total_videos": len(playlist["videos"]),
             "max_videos": max_videos,
             "created_at": old.get("created_at") or time.time(),
@@ -112,6 +112,40 @@ def update_video(playlist_id: str, video_id: str, **fields) -> None:
         for v in data[playlist_id]["videos"]:
             if v["video_id"] == video_id:
                 v.update(fields)
+        _save(data)
+
+
+def seed_existing_collection(collection: str = config.COLLECTION) -> None:
+    """Show the playlist indexed before this feature existed (the 'lectures' collection) in the registry."""
+    from . import vectorstore  # local import: keeps URL parsing usable without a Qdrant client
+
+    with _lock:
+        data = _load()
+        if any(p["collection"] == collection for p in data.values()):
+            return
+        client = vectorstore.get_client()
+        if not client.collection_exists(collection) or client.count(collection, exact=True).count == 0:
+            return
+        videos, title = [], None
+        for chunk_file in sorted(config.CHUNK_DIR.glob("*.json")):
+            meta_file = config.META_DIR / chunk_file.name
+            if not meta_file.exists():
+                continue
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            title = title or meta.get("playlist_title")
+            videos.append({
+                "video_id": meta["video_id"], "title": meta["title"], "duration": meta.get("duration"),
+                "status": "done", "progress": 100, "error": None, "source": "whisper",
+                "chunks": len(json.loads(chunk_file.read_text(encoding="utf-8"))),
+            })
+        if not videos:
+            return
+        record_id = f"existing-{collection}"
+        data[record_id] = {
+            "id": record_id, "title": title or "Existing lectures", "collection": collection,
+            "state": "ready", "total_videos": len(videos), "max_videos": len(videos),
+            "created_at": 0, "videos": videos,
+        }
         _save(data)
 
 

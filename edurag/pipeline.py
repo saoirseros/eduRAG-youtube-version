@@ -7,6 +7,7 @@ import json
 import logging
 
 from . import captions, chunker, config, downloader, embedder, playlists, transcriber, vectorstore
+from .config import cookie_opts_from_env
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +75,10 @@ def prepare_playlist(url: str, max_videos: int = config.DEFAULT_MAX_VIDEOS, cook
     return playlists.register_playlist(playlists.fetch_playlist(playlist_id, cookie_opts), max_videos)
 
 
+class JobCancelled(Exception):
+    """Raised inside a running video when the user cancels the playlist build."""
+
+
 def run_playlist(playlist_id: str, cookie_opts: dict | None = None, should_stop=lambda: False) -> dict:
     """Process every not-yet-done video of a registered playlist. Failures are recorded per video."""
     record = playlists.get_playlist(playlist_id)
@@ -91,12 +96,19 @@ def run_playlist(playlist_id: str, cookie_opts: dict | None = None, should_stop=
         vid = v["video_id"]
 
         def on_status(status, _vid=vid, **extra):
+            # called often (every Whisper segment), so this is also where a cancel takes effect
+            if should_stop():
+                raise JobCancelled()
             playlists.update_video(playlist_id, _vid, status=status, error=None, **extra)
 
         try:
             result = process_video(vid, record["collection"], cookie_opts, on_status)
             playlists.update_video(playlist_id, vid, status="done", progress=100, error=None,
                                    chunks=result["chunks"], source=result["source"])
+        except JobCancelled:
+            playlists.update_video(playlist_id, vid, status="queued", progress=0)
+            playlists.update_playlist(playlist_id, state="cancelled")
+            return playlists.get_playlist(playlist_id)
         except Exception as exc:
             log.exception("video %s failed", vid)
             playlists.update_video(playlist_id, vid, status="failed", error=str(exc)[:200] or type(exc).__name__)
@@ -115,7 +127,7 @@ if __name__ == "__main__":
     parser.add_argument("--cookies", help="Path to a cookies.txt file")
     args = parser.parse_args()
 
-    cookie_opts = {}
+    cookie_opts = cookie_opts_from_env()
     if args.cookies_from_browser:
         cookie_opts["cookiesfrombrowser"] = (args.cookies_from_browser,)
     if args.cookies:
