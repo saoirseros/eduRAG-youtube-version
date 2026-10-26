@@ -12,7 +12,10 @@ for d in (AUDIO_DIR, META_DIR, TRANSCRIPT_DIR):
 # Whisper (runs locally on CPU)
 WHISPER_MODEL = "small"
 WHISPER_COMPUTE_TYPE = "int8"
-# "hi" handles Hindi/Hinglish lectures; use "en" for English-only, or None to auto-detect
-WHISPER_LANGUAGE = "hi"
-# Romanised Hinglish prompt nudges Whisper to write Roman script instead of Devanagari
-WHISPER_PROMPT = "Aaj hum sliding window ka concept padhenge. Array aur string ke questions solve karenge."
+WHISPER_LANGUAGE = "en"  # None = auto-detect
+
+# Chunking
+CHUNK_SECONDS = 75    # target length of each chunk
+OVERLAP_SECONDS = 15  # how much of the previous chunk is repeated, so topics aren't cut at a boundary
+CHUNK_DIR = DATA_DIR / "chunks"
+CHUNK_DIR.mkdir(parents=True, exist_ok=True)

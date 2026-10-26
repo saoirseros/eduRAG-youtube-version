@@ -34,7 +34,6 @@ def transcribe_video(meta: dict, language: str | None, force: bool = False) -> d
     segments_iter, info = _get_model().transcribe(
         str(audio_path),
         language=language,
-        initial_prompt=config.WHISPER_PROMPT if language in ("hi", None) else None,
         vad_filter=True,
         beam_size=5,
         # avoids hallucination loops that can cascade across long lectures
@@ -86,7 +85,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Transcribe downloaded audio with Whisper")
     parser.add_argument("--video-id", help="Only transcribe this video")
     parser.add_argument("--language", default=config.WHISPER_LANGUAGE,
-                        help="Language code (hi, en, ...) or 'auto'")
+                        help="Language code (en, ...) or 'auto'")
     parser.add_argument("--force", action="store_true", help="Re-transcribe existing transcripts")
     args = parser.parse_args()
 
