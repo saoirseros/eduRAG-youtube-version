@@ -32,7 +32,8 @@ def _progress(d: dict) -> None:
         print(f"[downloaded] {d['filename']}")
 
 
-def download_playlist(url: str, limit: int | None = None) -> list[dict]:
+def download_playlist(url: str, limit: int | None = None, cookies_from_browser: str | None = None,
+                      cookies_file: str | None = None) -> list[dict]:
     """Download audio for a playlist (or single video). Already-downloaded files are skipped."""
     opts = {
         # raw audio stream, no ffmpeg conversion needed (faster-whisper decodes it directly)
@@ -45,6 +46,11 @@ def download_playlist(url: str, limit: int | None = None) -> list[dict]:
         "no_warnings": True,
         "progress_hooks": [_progress],
     }
+    # only needed if YouTube shows "Sign in to confirm you're not a bot"
+    if cookies_from_browser:
+        opts["cookiesfrombrowser"] = (cookies_from_browser,)
+    if cookies_file:
+        opts["cookiefile"] = cookies_file
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=True)
 
@@ -68,9 +74,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download audio of a YouTube playlist")
     parser.add_argument("url", help="YouTube playlist (or video) URL")
     parser.add_argument("--limit", type=int, default=None, help="Only the first N videos")
+    parser.add_argument("--cookies-from-browser", help="e.g. firefox, chrome, edge (if YouTube asks to sign in)")
+    parser.add_argument("--cookies", help="Path to a cookies.txt file (alternative to the above)")
     args = parser.parse_args()
 
-    videos = download_playlist(args.url, args.limit)
+    videos = download_playlist(args.url, args.limit, args.cookies_from_browser, args.cookies)
     print(f"\nDone. {len(videos)} video(s) ready in {AUDIO_DIR}")
     for v in videos:
         print(f"  {v['video_id']}  {v['title']}")
