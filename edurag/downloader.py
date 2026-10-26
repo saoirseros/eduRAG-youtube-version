@@ -70,6 +70,51 @@ def download_playlist(url: str, limit: int | None = None, cookies_from_browser: 
     return results
 
 
+def fetch_info(video_id: str, cookie_opts: dict | None = None) -> dict:
+    """Metadata (title, duration, captions list) for one video, without downloading anything."""
+    opts = {"quiet": True, "no_warnings": True, "skip_download": True, **(cookie_opts or {})}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+    if not info:
+        raise RuntimeError("Could not fetch the video (private, deleted or blocked?).")
+    return info
+
+
+def save_metadata(info: dict, playlist_title: str | None = None, audio_file: str | None = None) -> dict:
+    """Write data/metadata/<id>.json from a yt-dlp info dict; audio_file is None when captions were used."""
+    video_id = info["id"]
+    meta = {
+        "video_id": video_id,
+        "title": info.get("title"),
+        "url": f"https://www.youtube.com/watch?v={video_id}",
+        "channel": info.get("channel") or info.get("uploader"),
+        "duration": info.get("duration"),
+        "playlist_title": playlist_title,
+        "audio_file": audio_file,
+    }
+    (META_DIR / f"{video_id}.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    return meta
+
+
+def download_audio(video_id: str, cookie_opts: dict | None = None) -> str:
+    """Download just the audio of one video; returns the file name inside AUDIO_DIR."""
+    existing = [f for f in AUDIO_DIR.glob(f"{video_id}.*") if f.suffix not in (".part", ".ytdl")]
+    if existing:
+        return existing[0].name
+    opts = {
+        "format": "bestaudio[ext=m4a]/bestaudio/best",
+        "outtmpl": str(AUDIO_DIR / "%(id)s.%(ext)s"),
+        "quiet": True, "noprogress": True, "no_warnings": True,
+        **(cookie_opts or {}),
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+    files = [f for f in AUDIO_DIR.glob(f"{video_id}.*") if f.suffix not in (".part", ".ytdl")]
+    if not files:
+        raise RuntimeError("Audio download failed.")
+    return files[0].name
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Download audio of a YouTube playlist")
     parser.add_argument("url", help="YouTube playlist (or video) URL")

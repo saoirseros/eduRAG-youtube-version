@@ -16,6 +16,11 @@ TRANSCRIPT_DIR = DATA_DIR / "transcripts"
 for d in (AUDIO_DIR, META_DIR, TRANSCRIPT_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
+# "Build your own playlist" feature
+PLAYLIST_REGISTRY = DATA_DIR / "playlists.json"
+DEFAULT_MAX_VIDEOS = 2          # videos processed per playlist unless the user asks for more
+MAX_VIDEO_SECONDS = 3 * 3600    # skip videos longer than this when Whisper would be needed
+
 # Whisper (runs locally on CPU)
 WHISPER_MODEL = "small"
 WHISPER_COMPUTE_TYPE = "int8"

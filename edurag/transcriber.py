@@ -22,7 +22,7 @@ def _get_model() -> WhisperModel:
     return _model
 
 
-def transcribe_video(meta: dict, language: str | None, force: bool = False) -> dict | None:
+def transcribe_video(meta: dict, language: str | None, force: bool = False, on_progress=None) -> dict | None:
     """Transcribe one video and save data/transcripts/<video_id>.json. Skips if already done."""
     video_id = meta["video_id"]
     out_path = config.TRANSCRIPT_DIR / f"{video_id}.json"
@@ -53,12 +53,15 @@ def transcribe_video(meta: dict, language: str | None, force: bool = False) -> d
             pct = min(seg.end / total * 100, 100)
             elapsed = time.time() - start_time
             print(f"\r  {pct:5.1f}%  ({elapsed/60:.1f} min elapsed)", end="", flush=True)
+            if on_progress:
+                on_progress(pct)
     print()
 
     transcript = {
         "video_id": video_id,
         "title": meta["title"],
         "language": info.language,
+        "source": "whisper",
         "duration": total,
         "segments": segments,
     }

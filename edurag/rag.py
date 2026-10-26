@@ -24,9 +24,9 @@ def _build_prompt(query: str, chunks: list[dict]) -> str:
 NOT_FOUND = "I couldn't find anything about that in the indexed lectures."
 
 
-def retrieve(query: str) -> list[dict]:
+def retrieve(query: str, collection: str | None = None) -> list[dict]:
     """Top chunks from Qdrant, keeping only the relevant ones (best first)."""
-    hits = vectorstore.search(embedder.embed_query(query), config.TOP_K)
+    hits = vectorstore.search(embedder.embed_query(query), config.TOP_K, collection)
     if not hits:
         return []
     cutoff = max(config.MIN_SCORE, hits[0]["score"] * config.RELATIVE_SCORE)
@@ -51,9 +51,9 @@ def stream_answer(query: str, chunks: list[dict]):
             yield text
 
 
-def answer(query: str) -> dict:
+def answer(query: str, collection: str | None = None) -> dict:
     """Return {"answer": str, "sources": [chunk dicts with title, start_label, link, score, ...]}."""
-    chunks = retrieve(query)
+    chunks = retrieve(query, collection)
     if not chunks:
         return {"answer": NOT_FOUND, "sources": []}
     return {"answer": "".join(stream_answer(query, chunks)).strip(), "sources": chunks}
