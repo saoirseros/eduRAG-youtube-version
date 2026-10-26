@@ -29,3 +29,9 @@ EMBEDDING_DIM = 384
 QDRANT_URL = "http://localhost:6333"
 COLLECTION = os.getenv("EDURAG_COLLECTION", "lectures")  # set to "lectures_demo" to use the dummy data
 TOP_K = 5
+# chunks scoring below this are treated as unrelated (MiniLM: relevant ~0.4-0.6, unrelated <0.2); tune if needed
+MIN_SCORE = 0.25
+
+# LLM (Ollama runs on the host, not in Docker)
+OLLAMA_URL = "http://localhost:11434"
+LLM_MODEL = "llama3.2"
