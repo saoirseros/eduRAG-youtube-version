@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,7 +18,7 @@ WHISPER_LANGUAGE = "en"  # None = auto-detect
 # Chunking
 CHUNK_SECONDS = 75    # target length of each chunk
 OVERLAP_SECONDS = 15  # how much of the previous chunk is repeated, so topics aren't cut at a boundary
-CHUNK_DIR = DATA_DIR / "chunks"
+CHUNK_DIR = Path(os.getenv("EDURAG_CHUNK_DIR", DATA_DIR / "chunks"))
 CHUNK_DIR.mkdir(parents=True, exist_ok=True)
 
 # Embeddings (runs locally on CPU)
@@ -26,5 +27,5 @@ EMBEDDING_DIM = 384
 
 # Qdrant (the Docker container from docker-compose.yml)
 QDRANT_URL = "http://localhost:6333"
-COLLECTION = "lectures"
+COLLECTION = os.getenv("EDURAG_COLLECTION", "lectures")  # set to "lectures_demo" to use the dummy data
 TOP_K = 5
