@@ -1,5 +1,11 @@
 import os
+import sys
 from pathlib import Path
+
+# video titles often contain emojis, which the default Windows console encoding can't print
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
