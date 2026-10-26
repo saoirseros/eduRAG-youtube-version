@@ -113,19 +113,41 @@ $("form").addEventListener("submit", async (e) => {
   if (!query) return;
   const box = $("answer"), btn = $("btn");
   btn.disabled = true;
+  sources = []; renderSources();
+  $("player").classList.add("hidden");
   box.className = "answer"; box.textContent = "Searching the lectures…";
+
+  let text = "";
+  const handle = (ev) => {
+    if (ev.type === "sources") {
+      sources = ev.sources;
+      renderSources();
+      if (sources.length) play(0, false);
+    } else if (ev.type === "token") {
+      text += ev.text;
+      renderAnswer(text);
+    } else if (ev.type === "error") {
+      throw new Error(ev.detail);
+    }
+  };
+
   try {
     const res = await fetch("/api/ask", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Something went wrong.");
-    sources = data.sources;
-    renderAnswer(data.answer);
-    renderSources();
-    if (sources.length) play(0, false); else $("player").classList.add("hidden");
+    if (!res.ok) throw new Error("Something went wrong. Please try again.");
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // keep the incomplete last line for the next read
+      for (const line of lines) if (line.trim()) handle(JSON.parse(line));
+    }
   } catch (err) {
-    sources = []; renderSources();
     box.className = "answer error"; box.textContent = err.message;
   } finally {
     btn.disabled = false;

@@ -37,6 +37,9 @@ COLLECTION = os.getenv("EDURAG_COLLECTION", "lectures")  # set to "lectures_demo
 TOP_K = 5
 # chunks scoring below this are treated as unrelated (MiniLM: relevant ~0.4-0.6, unrelated <0.2); tune if needed
 MIN_SCORE = 0.25
+# also drop chunks scoring below this fraction of the best match; fewer chunks = much faster LLM on CPU
+RELATIVE_SCORE = 0.7
+MAX_ANSWER_TOKENS = 300
 
 # LLM (Ollama runs on the host, not in Docker)
 OLLAMA_URL = "http://localhost:11434"

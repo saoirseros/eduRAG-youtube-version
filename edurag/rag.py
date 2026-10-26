@@ -8,35 +8,55 @@ from . import config, embedder, vectorstore
 SYSTEM_PROMPT = """You answer questions about lecture videos using ONLY the numbered excerpts provided.
 Rules:
 - Use only information in the excerpts. If they don't contain the answer, say you couldn't find it in the lectures.
-- Mention where the topic is taught: the video title and the timestamp (mm:ss), citing the excerpt number like [1].
-- Be concise: a short explanation, then the best place(s) to watch."""
+- Give a short, direct answer in your own words. Do not copy the excerpt headers.
+- End with where to watch it, in the form: Watch "Video title" at mm:ss [n], where n is the excerpt number.
+- Be concise."""
 
 
 def _build_prompt(query: str, chunks: list[dict]) -> str:
     excerpts = "\n\n".join(
-        f"[{i}] Video: {c['title']} | Time: {c['start_label']}-{c['end_label']}\n{c['text']}"
+        f"Excerpt [{i}] (video \"{c['title']}\", starts at {c['start_label']}):\n{c['text']}"
         for i, c in enumerate(chunks, 1)
     )
-    return f"Excerpts:\n{excerpts}\n\nQuestion: {query}"
+    return f"{excerpts}\n\nQuestion: {query}"
 
 
-def answer(query: str) -> dict:
-    """Return {"answer": str, "sources": [chunk dicts with title, start_label, link, score, ...]}."""
+NOT_FOUND = "I couldn't find anything about that in the indexed lectures."
+
+
+def retrieve(query: str) -> list[dict]:
+    """Top chunks from Qdrant, keeping only the relevant ones (best first)."""
     hits = vectorstore.search(embedder.embed_query(query), config.TOP_K)
-    chunks = [h for h in hits if h["score"] >= config.MIN_SCORE]
-    if not chunks:
-        return {"answer": "I couldn't find anything about that in the indexed lectures.", "sources": []}
+    if not hits:
+        return []
+    cutoff = max(config.MIN_SCORE, hits[0]["score"] * config.RELATIVE_SCORE)
+    return [h for h in hits if h["score"] >= cutoff]
 
+
+def stream_answer(query: str, chunks: list[dict]):
+    """Yield the LLM's answer piece by piece."""
     client = ollama.Client(host=config.OLLAMA_URL)
-    response = client.chat(
+    stream = client.chat(
         model=config.LLM_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _build_prompt(query, chunks)},
         ],
-        options={"temperature": 0.2, "num_ctx": 4096},
+        options={"temperature": 0.2, "num_ctx": 4096, "num_predict": config.MAX_ANSWER_TOKENS},
+        stream=True,
     )
-    return {"answer": response["message"]["content"].strip(), "sources": chunks}
+    for part in stream:
+        text = part["message"]["content"]
+        if text:
+            yield text
+
+
+def answer(query: str) -> dict:
+    """Return {"answer": str, "sources": [chunk dicts with title, start_label, link, score, ...]}."""
+    chunks = retrieve(query)
+    if not chunks:
+        return {"answer": NOT_FOUND, "sources": []}
+    return {"answer": "".join(stream_answer(query, chunks)).strip(), "sources": chunks}
 
 
 def format_result(result: dict) -> str:

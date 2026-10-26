@@ -10,7 +10,11 @@ def _get_model() -> SentenceTransformer:
     global _model
     if _model is None:
         print(f"Loading embedding model '{config.EMBEDDING_MODEL}' ...")
-        _model = SentenceTransformer(config.EMBEDDING_MODEL, device="cpu")
+        try:
+            # use the local cache when possible: no network calls, no retries when offline
+            _model = SentenceTransformer(config.EMBEDDING_MODEL, device="cpu", local_files_only=True)
+        except Exception:
+            _model = SentenceTransformer(config.EMBEDDING_MODEL, device="cpu")
     return _model
 
 

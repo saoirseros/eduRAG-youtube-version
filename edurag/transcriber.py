@@ -14,9 +14,11 @@ def _get_model() -> WhisperModel:
     global _model
     if _model is None:
         print(f"Loading Whisper '{config.WHISPER_MODEL}' ({config.WHISPER_COMPUTE_TYPE}) ...")
-        _model = WhisperModel(
-            config.WHISPER_MODEL, device="cpu", compute_type=config.WHISPER_COMPUTE_TYPE
-        )
+        try:
+            _model = WhisperModel(config.WHISPER_MODEL, device="cpu",
+                                  compute_type=config.WHISPER_COMPUTE_TYPE, local_files_only=True)
+        except Exception:
+            _model = WhisperModel(config.WHISPER_MODEL, device="cpu", compute_type=config.WHISPER_COMPUTE_TYPE)
     return _model
 
 
