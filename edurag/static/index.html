@@ -33,17 +33,51 @@
   .player .caption { padding: 10px 14px; font-size: 12px; color: #b4bac8; display: flex; justify-content: space-between; gap: 10px; }
   .player .caption a { color: #f08a3c; white-space: nowrap; }
   .hidden { display: none; }
+  .card { background: #10131a; border: 1px solid #1c2029; border-radius: 10px; padding: 14px; margin-bottom: 20px; }
+  .card .row { display: flex; gap: 10px; margin-top: 10px; }
+  .card .row:first-child { margin-top: 0; }
+  #maxVideos { flex: 0 0 64px; text-align: center; padding: 12px 6px; }
+  select { flex: 1; min-width: 0; padding: 10px 12px; background: #141821; color: inherit; border: 1px solid #232938; border-radius: 8px; font-size: 13px; }
+  .btn { padding: 8px 14px; background: #1d2230; color: inherit; border: 1px solid #2b3347; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .btn:hover { border-color: #f08a3c; }
+  .btn.primary { background: #f08a3c; color: #111; border-color: #f08a3c; font-weight: 600; }
+  .btn.danger:hover { border-color: #ef4444; color: #ff8a80; }
+  .btn:disabled { opacity: .5; cursor: wait; }
+  .status { font-size: 13px; margin: 12px 0 6px; }
+  .hint { font-size: 12px; color: #9aa1b2; margin: 6px 0; line-height: 1.45; }
+  .msg { font-size: 12px; margin-top: 8px; color: #9aa1b2; }
+  .msg.error { color: #ff8a80; }
+  .vrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 12px; border-top: 1px solid #1c2029; }
+  .vrow .vt { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { padding: 2px 8px; border-radius: 10px; background: #1d2230; color: #b4bac8; font-size: 11px; white-space: nowrap; }
+  .chip.ok { background: #12301f; color: #4ade80; }
+  .chip.bad { background: #3a1d1d; color: #ff8a80; }
+  .chip.busy { background: #3a2a12; color: #f0b36c; }
+  .verr { font-size: 11px; color: #ff8a80; padding: 0 0 6px; }
+  .bar { height: 3px; background: #1d2230; border-radius: 2px; margin-bottom: 6px; }
+  .bar .fill { height: 100%; background: #f08a3c; border-radius: 2px; transition: width .4s; }
+  .actions { display: flex; gap: 10px; margin-top: 12px; }
 </style>
 </head>
 <body>
 <header>
   <h1>EduRAG</h1>
-  <p>Ask in English. Answers come only from what was actually said in the lectures.</p>
+  <p>Turn a YouTube playlist into a searchable knowledge base. Answers come only from what was said in the videos.</p>
 </header>
 <main>
   <section class="left">
+    <div class="card">
+      <form id="addForm" class="row">
+        <input id="url" type="text" maxlength="300" placeholder="Paste a YouTube playlist link" autocomplete="off">
+        <input id="maxVideos" type="number" min="1" max="50" value="2" title="How many videos to include (from the start of the playlist)">
+        <button class="ask" id="addBtn" type="submit">Add</button>
+      </form>
+      <div id="addMsg" class="msg hidden"></div>
+      <div id="pickerRow" class="row hidden"><select id="picker" aria-label="Playlist"></select></div>
+      <div id="panel"></div>
+    </div>
     <form id="form">
-      <input id="q" type="text" maxlength="500" placeholder="e.g. how does a variable size sliding window work?" autocomplete="off" autofocus>
+      <input id="q" type="text" maxlength="500" placeholder="Ask a question about this playlist" autocomplete="off" autofocus>
       <button class="ask" id="btn" type="submit">Ask</button>
     </form>
     <div id="answer" class="answer hidden"></div>
@@ -62,7 +96,216 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
 let sources = [];
+let playlists = [];
+let currentId = localStorage.getItem("edurag.playlist");
+let pollTimer = null;
+let asking = false;
+const current = () => playlists.find((p) => p.id === currentId);
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  let data = null;
+  try { data = await res.json(); } catch { /* no JSON body */ }
+  if (!res.ok) throw new Error(typeof data?.detail === "string" ? data.detail : "Something went wrong. Please try again.");
+  return data;
+}
+
+function fmtDur(sec) {
+  const m = Math.max(1, Math.round(sec / 60));
+  return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`;
+}
+
+function upsert(p) {
+  const i = playlists.findIndex((x) => x.id === p.id);
+  if (i >= 0) playlists[i] = p; else playlists.unshift(p);
+}
+
+function clearAnswer() {
+  sources = []; renderSources();
+  $("player").classList.add("hidden");
+  $("frame").removeAttribute("src");
+  $("answer").classList.add("hidden");
+}
+
+function select(id) {
+  currentId = id;
+  if (id) localStorage.setItem("edurag.playlist", id); else localStorage.removeItem("edurag.playlist");
+  clearAnswer();
+  renderAll();
+}
+
+function renderAll() {
+  renderPicker(); renderPanel(); updateAskState(); syncPolling();
+}
+
+function renderPicker() {
+  const sel = $("picker");
+  sel.replaceChildren();
+  for (const p of playlists) {
+    const o = el("option", "", `${p.title}  (${p.videos_done}/${p.videos_total} videos)`);
+    o.value = p.id;
+    sel.append(o);
+  }
+  sel.value = currentId || "";
+  $("pickerRow").classList.toggle("hidden", playlists.length === 0);
+}
+
+function updateAskState() {
+  const p = current();
+  const ready = !!p && p.videos_done > 0;
+  $("q").disabled = !ready;
+  $("btn").disabled = !ready || asking;
+  $("picker").disabled = asking;
+  $("q").placeholder = ready ? "Ask a question about this playlist" : "Build a playlist first, then ask questions here";
+}
+
+function statusText(p) {
+  const undone = p.videos_total - p.videos_done;
+  const failed = p.videos.filter((v) => v.status === "failed").length;
+  if (p.active) {
+    return p.state === "queued" ? "Waiting to start…" : `Building… ${p.videos_done} of ${p.videos_total} videos done. You can already search the finished ones.`;
+  }
+  if (undone === 0) return `Ready: all ${p.videos_total} videos are searchable.`;
+  if (p.state === "new") return `Ready to build ${undone} video${undone === 1 ? "" : "s"}.`;
+  if (p.state === "cancelled") return `Build cancelled. ${p.videos_done} of ${p.videos_total} videos are searchable.`;
+  if (p.state === "interrupted") return "The build was interrupted (the server restarted). Resume to continue.";
+  if (failed) return `${failed} video${failed === 1 ? "" : "s"} failed. You can retry.`;
+  return `${p.videos_done} of ${p.videos_total} videos are searchable.`;
+}
+
+function renderPanel() {
+  const panel = $("panel");
+  panel.replaceChildren();
+  const p = current();
+  if (!p) {
+    panel.append(el("p", "hint", "Paste a YouTube playlist link above to build a searchable knowledge base from it."));
+    return;
+  }
+  const undone = p.videos_total - p.videos_done;
+  panel.append(el("div", "status", statusText(p)));
+  if (!p.active && undone > 0 && p.total_duration) {
+    panel.append(el("p", "hint",
+      `About ${fmtDur(p.total_duration)} of video. Videos with YouTube captions are ready in seconds; others are transcribed locally and take roughly as long as the video.`));
+  }
+  if (p.total_videos > p.videos_total) {
+    panel.append(el("p", "hint",
+      `Only the first ${p.videos_total} of ${p.total_videos} videos are included. Paste the link again with a higher number to add more.`));
+  }
+  for (const v of p.videos) {
+    const row = el("div", "vrow");
+    row.append(el("span", "vt", v.title));
+    const label = v.status === "done" ? "✓ done" : v.status === "transcribing" ? `transcribing ${Number(v.progress) || 0}%` : v.status;
+    const kind = v.status === "done" ? "ok" : v.status === "failed" ? "bad" : v.status === "queued" ? "" : "busy";
+    row.append(el("span", `chip ${kind}`.trim(), label));
+    panel.append(row);
+    if (v.status === "transcribing") {
+      const bar = el("div", "bar"), fill = el("div", "fill");
+      fill.style.width = `${Math.min(100, Number(v.progress) || 0)}%`;
+      bar.append(fill); panel.append(bar);
+    }
+    if (v.status === "failed" && v.error) panel.append(el("div", "verr", v.error));
+  }
+
+  const actions = el("div", "actions");
+  if (p.active) {
+    const b = el("button", "btn", "Cancel build"); b.type = "button"; b.onclick = cancelBuild; actions.append(b);
+  } else {
+    if (undone > 0) {
+      const b = el("button", "btn primary", p.state === "new" ? "Build" : "Resume"); b.type = "button"; b.onclick = startBuild; actions.append(b);
+    }
+    if (p.collection.startsWith("pl_")) {
+      const b = el("button", "btn danger", "Delete playlist"); b.type = "button"; b.onclick = deletePlaylist; actions.append(b);
+    }
+  }
+  if (actions.children.length) panel.append(actions);
+}
+
+function syncPolling() {
+  const p = current();
+  if (p && p.active && !pollTimer) pollTimer = setInterval(refreshCurrent, 2000);
+  if (!(p && p.active) && pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function refreshCurrent() {
+  const id = currentId;
+  if (!id) return;
+  try {
+    upsert(await api(`/api/playlists/${encodeURIComponent(id)}`));
+    if (id === currentId) renderAll();
+  } catch { /* server busy or restarting; the next poll will retry */ }
+}
+
+async function runAction(path, method = "POST") {
+  const id = currentId;
+  try {
+    const result = await api(`/api/playlists/${encodeURIComponent(id)}${path}`, { method });
+    if (result && result.videos) upsert(result);
+  } catch (err) {
+    showAddMsg(err.message, true);
+  }
+  await refreshCurrent();
+}
+const startBuild = () => runAction("/start");
+const cancelBuild = () => runAction("/cancel");
+
+async function deletePlaylist() {
+  const p = current();
+  if (!p || !confirm(`Delete "${p.title}" and its search index? Downloaded transcripts are kept.`)) return;
+  try {
+    await api(`/api/playlists/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+    playlists = playlists.filter((x) => x.id !== p.id);
+    select((playlists.find((x) => x.videos_done > 0) || playlists[0] || {}).id || null);
+  } catch (err) {
+    showAddMsg(err.message, true);
+  }
+}
+
+function showAddMsg(text, isError) {
+  const m = $("addMsg");
+  m.textContent = text;
+  m.className = `msg${isError ? " error" : ""}${text ? "" : " hidden"}`;
+}
+
+$("addForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const url = $("url").value.trim();
+  if (!url) return;
+  const max = Math.min(50, Math.max(1, Number($("maxVideos").value) || 2));
+  $("addBtn").disabled = true;
+  showAddMsg("Reading the playlist…");
+  try {
+    const p = await api("/api/playlists", { method: "POST", body: JSON.stringify({ url, max_videos: max }) });
+    upsert(p);
+    $("url").value = "";
+    showAddMsg("");
+    select(p.id);
+  } catch (err) {
+    showAddMsg(err.message, true);
+  } finally {
+    $("addBtn").disabled = false;
+  }
+});
+
+$("picker").addEventListener("change", (e) => { select(e.target.value); refreshCurrent(); });
+
+async function loadPlaylists() {
+  try {
+    playlists = await api("/api/playlists");
+  } catch (err) {
+    showAddMsg("Could not reach the server.", true);
+    return;
+  }
+  if (!current()) currentId = (playlists.find((p) => p.videos_done > 0) || playlists[0] || {}).id || null;
+  renderAll();
+}
+loadPlaylists();
 
 function play(i, autoplay) {
   const s = sources[i];
@@ -110,9 +353,9 @@ function renderSources() {
 $("form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const query = $("q").value.trim();
-  if (!query) return;
-  const box = $("answer"), btn = $("btn");
-  btn.disabled = true;
+  if (!query || !currentId) return;
+  const box = $("answer");
+  asking = true; updateAskState();
   sources = []; renderSources();
   $("player").classList.add("hidden");
   box.className = "answer"; box.textContent = "Searching the lectures…";
@@ -133,9 +376,14 @@ $("form").addEventListener("submit", async (e) => {
 
   try {
     const res = await fetch("/api/ask", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, playlist_id: currentId }),
     });
-    if (!res.ok) throw new Error("Something went wrong. Please try again.");
+    if (!res.ok) {
+      let detail = "Something went wrong. Please try again.";
+      try { const d = await res.json(); if (typeof d.detail === "string") detail = d.detail; } catch { /* keep default */ }
+      throw new Error(detail);
+    }
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -150,7 +398,7 @@ $("form").addEventListener("submit", async (e) => {
   } catch (err) {
     box.className = "answer error"; box.textContent = err.message;
   } finally {
-    btn.disabled = false;
+    asking = false; updateAskState();
   }
 });
 </script>
