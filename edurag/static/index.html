@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EduRAG</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0d12; color: #e6e8ee; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { padding: 18px 24px; border-bottom: 1px solid #1c2029; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 12px; color: #9aa1b2; }
+  main { display: flex; gap: 24px; padding: 24px; max-width: 1200px; margin: 0 auto; flex-wrap: wrap; }
+  .left { flex: 1 1 360px; min-width: 0; }
+  .right { flex: 1 1 360px; min-width: 0; }
+  form { display: flex; gap: 10px; }
+  input { flex: 1; padding: 12px 14px; background: #141821; color: inherit; border: 1px solid #232938; border-radius: 8px; font-size: 14px; }
+  input:focus { outline: none; border-color: #f08a3c; }
+  button.ask { padding: 0 22px; background: #f08a3c; color: #111; border: 0; border-radius: 8px; font-weight: 600; cursor: pointer; }
+  button.ask:disabled { opacity: .5; cursor: wait; }
+  .answer { margin-top: 18px; padding: 14px 16px; background: #141821; border-left: 3px solid #4ade80; border-radius: 4px; line-height: 1.55; font-size: 14px; white-space: pre-wrap; }
+  .answer.error { border-left-color: #ef4444; }
+  .cite { background: #3a1d1d; color: #ff8a80; border: 1px solid #5c2a2a; border-radius: 4px; font-size: 11px; padding: 1px 5px; cursor: pointer; margin: 0 1px; }
+  h2 { font-size: 11px; letter-spacing: .08em; color: #9aa1b2; margin: 22px 0 10px; font-weight: 600; }
+  .source { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; margin-bottom: 8px; background: #141821; border: 1px solid #232938; border-radius: 8px; color: inherit; cursor: pointer; text-align: left; font-size: 13px; }
+  .source:hover, .source.active { border-color: #f08a3c; }
+  .source .n { color: #ff6b5e; font-weight: 600; }
+  .source .t { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .source .time { background: #1d2230; padding: 3px 8px; border-radius: 6px; font-size: 12px; }
+  .player { background: #141821; border: 1px solid #232938; border-radius: 10px; overflow: hidden; }
+  .player .frame { position: relative; padding-top: 56.25%; background: #000; }
+  .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .player .caption { padding: 10px 14px; font-size: 12px; color: #b4bac8; display: flex; justify-content: space-between; gap: 10px; }
+  .player .caption a { color: #f08a3c; white-space: nowrap; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>EduRAG</h1>
+  <p>Ask in English. Answers come only from what was actually said in the lectures.</p>
+</header>
+<main>
+  <section class="left">
+    <form id="form">
+      <input id="q" type="text" maxlength="500" placeholder="e.g. how does a variable size sliding window work?" autocomplete="off" autofocus>
+      <button class="ask" id="btn" type="submit">Ask</button>
+    </form>
+    <div id="answer" class="answer hidden"></div>
+    <div id="sourcesWrap" class="hidden">
+      <h2>SOURCES</h2>
+      <div id="sources"></div>
+    </div>
+  </section>
+  <section class="right">
+    <div id="player" class="player hidden">
+      <div class="frame"><iframe id="frame" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>
+      <div class="caption"><span id="caption"></span><a id="yt" target="_blank" rel="noopener">Open on YouTube</a></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let sources = [];
+
+function play(i, autoplay) {
+  const s = sources[i];
+  document.querySelectorAll(".source").forEach((el, j) => el.classList.toggle("active", j === i));
+  $("frame").src = `https://www.youtube.com/embed/${encodeURIComponent(s.video_id)}?start=${Math.floor(s.start)}&autoplay=${autoplay ? 1 : 0}`;
+  $("caption").textContent = `${s.title} — ${s.start_label}`;
+  $("yt").href = s.link;
+  $("player").classList.remove("hidden");
+}
+
+// show the answer as plain text, turning [1] [2] ... into clickable badges
+function renderAnswer(text) {
+  const box = $("answer");
+  box.replaceChildren();
+  for (const part of text.split(/(\[\d+\])/)) {
+    const m = part.match(/^\[(\d+)\]$/);
+    const idx = m ? Number(m[1]) - 1 : -1;
+    if (idx >= 0 && idx < sources.length) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "cite"; b.textContent = part;
+      b.onclick = () => play(idx, true);
+      box.append(b);
+    } else {
+      box.append(document.createTextNode(part));
+    }
+  }
+}
+
+function renderSources() {
+  const list = $("sources");
+  list.replaceChildren();
+  sources.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "source";
+    for (const [cls, txt] of [["n", `[${s.n}]`], ["t", s.title], ["time", s.start_label]]) {
+      const span = document.createElement("span");
+      span.className = cls; span.textContent = txt; b.append(span);
+    }
+    b.onclick = () => play(i, true);
+    list.append(b);
+  });
+  $("sourcesWrap").classList.toggle("hidden", sources.length === 0);
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const query = $("q").value.trim();
+  if (!query) return;
+  const box = $("answer"), btn = $("btn");
+  btn.disabled = true;
+  box.className = "answer"; box.textContent = "Searching the lectures…";
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(typeof data.detail === "string" ? data.detail : "Something went wrong.");
+    sources = data.sources;
+    renderAnswer(data.answer);
+    renderSources();
+    if (sources.length) play(0, false); else $("player").classList.add("hidden");
+  } catch (err) {
+    sources = []; renderSources();
+    box.className = "answer error"; box.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

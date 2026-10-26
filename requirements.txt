@@ -3,3 +3,5 @@ faster-whisper
 sentence-transformers
 qdrant-client
 ollama
+fastapi
+uvicorn
