@@ -19,3 +19,12 @@ CHUNK_SECONDS = 75    # target length of each chunk
 OVERLAP_SECONDS = 15  # how much of the previous chunk is repeated, so topics aren't cut at a boundary
 CHUNK_DIR = DATA_DIR / "chunks"
 CHUNK_DIR.mkdir(parents=True, exist_ok=True)
+
+# Embeddings (runs locally on CPU)
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+EMBEDDING_DIM = 384
+
+# Qdrant (the Docker container from docker-compose.yml)
+QDRANT_URL = "http://localhost:6333"
+COLLECTION = "lectures"
+TOP_K = 5
